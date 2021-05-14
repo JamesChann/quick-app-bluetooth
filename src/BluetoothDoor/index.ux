@@ -1,0 +1,127 @@
+<template>
+    <div class="doc-page">
+        <div class="page-title-wrap">
+            <text class="page-title">{{ descTitle }}</text>
+        </div>
+        
+        <div class="login-input-item">
+            <text class="login-input-hint">用户名</text>
+            <input class="login-input-text" type="text" placeholder="只能输入5个字符" onchange="loginChange" maxlength="5"></input>
+        </div>
+
+        <div class="login-input-item">
+            <text class="login-input-hint">密码</text>
+            <input class="login-input-text" type="password" placeholder="请输入password" onchange="loginChange"></input>
+        </div>  
+        
+        <!-- 按钮 -->
+        <div class="login-input-item">
+            <text class="login-input-hint">首页操作</text>
+            <div class="doc-row">
+            <input class="login-input-button login-input-button-first login-color-1" type="button" value="登录"
+                    onclick="optAction('登录')"></input>
+            <input class="login-input-button login-color-2" type="button" value="取消" onclick="optAction('取消')"></input>
+            <input class="login-input-button login-color-3" type="button" value="提交" onclick="optAction('提交')"></input>
+            </div>
+        </div>
+    </div>
+</template>
+
+<script>
+import router from '@system.router'
+
+export default {
+    private: {
+        descTitle: 'JM智能门锁'
+    },
+    onInit() {
+        this.$page.setTitleBar({text: '智能门锁登录页'})
+    },
+    optAction(msg) {
+        let _this = this
+        switch(msg) {
+            case '登录':
+                _this.login()
+                break;
+        }
+    },
+    loginChange(e) {
+        console.log('eee', e)
+    },
+    login() {
+        router.push({         
+            uri: '/BluetoothDoor/index'
+        })
+    }
+}
+</script>
+
+<style>
+@import '../Common/css/common.css';
+
+.login-input-item {
+    margin-bottom: 80px;
+    flex-direction: column;
+}
+.login-input-hint {
+    margin-left: 30px;
+    margin-bottom: 30px;
+    margin-right: 30px;
+}
+.doc-row {
+    justify-content: center;
+    margin-left: 30px;
+    margin-right: 30px;
+}
+.login-flex-grow {
+    flex-grow: 1;
+}
+.login-input-text {
+    height: 80px;
+    line-height: 80px;
+    padding-left: 30px;
+    padding-right: 30px;
+    margin-left: 30px;
+    margin-right: 30px;
+    border-top-width: 1px;
+    border-bottom-width: 1px;
+    border-color: #999999;
+    font-size: 30px;
+    background-color: #ffffff;
+}
+.login-input-text:focus {
+    border-color: #f76160;
+}
+.login-input-button {
+    flex: 1;
+    padding-top: 10px;
+    padding-right: 30px;
+    padding-bottom: 10px;
+    padding-left: 30px;
+    margin-left: 30px;
+    font-size: 30px;
+    color: #ffffff;
+}
+.login-input-button-first {
+    margin-left: 0px;
+}
+.login-color-1 {
+    background-color: #09ba07;
+}
+.login-color-1:active {
+    background-color: #098807;
+}
+.login-color-2 {
+    background-color: #f76160;
+}
+.login-color-2:active {
+    background-color: #c55756;
+}
+.login-color-3 {
+    background-color: #0faeff;
+}
+.login-color-3:active {
+    background-color: #0f7dcd;
+}
+</style>
+

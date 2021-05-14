@@ -1,0 +1,410 @@
+<template>
+    <div class="doc-page home-bg">
+        <div class="page-title-wrap">
+            <text class="page-title home-title">{{ descTitle }}</text>
+        </div>
+
+        <div class="home-tip-wrap">
+            <image src="../../Common/img/home-tip.png"></image>
+            <text class="home-tip-txt"><span>如有开门问题请到“我的”-“故障报修”中报修</span></text>
+        </div>
+
+        <div class="home-door-wrap">
+            <image src="../../Common/img/home-door.png"></image>
+            <text class="home-door-txt"><span>房间号：JM二部</span></text>
+        </div>
+
+        <div class="home-log">
+            <label class="log">设备列表:</label>
+            <text class="text" for="(index, item) in infoList">
+                设备{{ index+1 }} -- {{ item.localName }} // deviceId -- {{ item.deviceId }}
+            </text>
+        </div>
+
+        <div class="home-door-optreate">
+            <image class="home-img-css" data-id="Beoplay" onclick="openDoor" src="../../Common/img/openDoor.png"></image>
+            <image class="home-img-css" data-id="1111002" src="../../Common/img/closeDoor.png"></image>
+        </div>
+    </div>
+</template>
+
+<script>
+import bluetooth from "@system.bluetooth";
+import prompt from '@system.prompt';
+
+export default {
+    private: {
+        descTitle: 'JM智能门锁',
+        infoList: [],
+        available: false, // 设备可用
+        discovering: false, // 搜索状态
+        serviceId: '', // 服务Id
+        characteristicId: '', // 特征值
+        deviceId: '', // mac 地址 （ios的mac地址是UUID，由于隐私保护的原因引起的）
+        name: '' // 设备编号 完整： ET01-XXXXX
+    },
+    //arrayBuffer转String
+	ab2hex(buffer) {
+		var hexArr = Array.prototype.map.call(
+			new Uint8Array(buffer),
+			function (bit) {
+				return ("00" + bit.toString(16)).slice(-2);
+			});
+		return hexArr.join("");
+    },
+    // hex转ArrayBuffer
+    strToBuf(arr) {
+        var length = arr.length
+        var buffer = new ArrayBuffer(length + 2)
+        var dataview = new DataView(buffer)
+        for (let i = 0; i < length; i++) {
+            dataview.setUint8(i, '0x' + arr[i])
+        }
+        return buffer
+    },
+    // 16进度 转化 string
+    hexToString(hex) {
+        var string = '';
+        for (var i = 0; i < hex.length; i += 2) {
+            string += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
+        }
+        return string;
+    },
+
+    onInit() {
+        this.$page.setTitleBar({text: '智能门锁首页'})
+    },
+
+    openDoor(e) {
+        this.infoList = []
+        let id = e.target.dataset.id
+        console.log('打开的id', id)
+        this.name = id
+
+        // 多个设备连接（切换设备的时候的需要 wx.closeBLEConnection 和 wx.closeBluetoothAdapter 释放资源）
+        this.initBluetooth()
+    },
+
+    initBluetooth() {
+        let _this = this
+
+        // 版本过低兼容
+        if (!bluetooth.openAdapter) {
+            prompt.showToast({
+                message: '当前快应用版本过低，无法使用该功能，请升级到最新快应用版本后重试。'
+            })
+            return;
+        }
+
+        //初始化蓝牙模块
+        bluetooth.openAdapter({
+			//是否打开系统蓝牙开关，默认false
+			operateAdapter: true,
+			success: function () {
+                console.log("初始化蓝牙模块 --- 已开启");
+                _this.watchBluetoothStateChange()
+                _this.searchBluetooth()
+			},
+			fail: function (data, code) {
+				console.log(`初始化蓝牙模块 --- 未开启, code = ${code}`);
+				if (code === 10001) {
+                    //蓝牙未打开，提示用户打开蓝牙
+                    prompt.showToast({
+                        message: '蓝牙开启失败，请手动打开系统蓝牙。'
+                    })
+				}
+			},
+			complete: function () {
+				console.log("complete");
+			}
+		})
+    },
+
+    /**
+     * 监听蓝牙适配器状态变化事件
+     */
+    watchBluetoothStateChange() {
+        //注册蓝牙适配器监听
+		bluetooth.onadapterstatechange = function (data) {
+			console.log("蓝牙适配器状态", data.available);
+		};
+    },
+
+    /**
+     * 查找设备
+     */
+    searchBluetooth() {
+        let _this = this
+        bluetooth.startDevicesDiscovery({
+			//指定设备uuid，支持16-bit,32-bit,128-bit uuid,不填则扫描周围所有设备
+			// services: ["1105"],
+			//是否允许重复设备上报，如果不需要监听广播包数据，建议不设置此项，默认值为false
+			allowDuplicatesKey: false,
+			success: function () {
+				console.log("查找设备");
+                _this.watchBluetoothFound()
+                // 20s 停止搜索
+                setTimeout(_this.stopSearchBluetooth, 20000)
+			}
+		});
+    },
+
+    /**
+     * 监听寻找到新设备
+     */
+    watchBluetoothFound() {
+        let _this = this;
+        bluetooth.ondevicefound = function (res) {
+            let device = res.devices[0]
+            if (device.localName) {
+                _this.infoList.push({
+                    localName: device.localName,
+                    deviceId: device.deviceId
+                })
+            }
+            // if (device.localName && device.localName.indexOf(`LE-${_this.name}`) > -1) {
+            if (device.localName && device.localName.indexOf(`${_this.name}`) > -1) {
+                console.log(`查找到 ${_this.name}`, '设备id', device.deviceId)
+
+                _this.deviceId = device.deviceId
+                console.info('连接成功---', _this.deviceId)
+                _this.connectBluetooth()
+
+                // 连接成功 需要断开蓝牙搜索
+                _this.stopSearchBluetooth()
+            }
+        }
+    },
+
+    /**
+     * 停止查找
+     */
+    stopSearchBluetooth() {
+        let _this = this;
+        bluetooth.stopDevicesDiscovery({
+            success: function(res) {
+                prompt.showToast({
+                    message: '停止搜索'
+                })
+                console.log("停止查找")
+            }
+        })
+    },
+
+    /**
+     * 连接设备
+     */
+    connectBluetooth() {
+        console.info('connectBluetooth', this.deviceId)
+        let _this = this;
+        bluetooth.createBLEConnection({
+            deviceId: _this.deviceId,
+            success(res) {
+                console.log("连接成功设备---" + JSON.stringify(res))
+                _this.getBluetoothServers()
+            },
+            fail(err) {
+                _this.closeConnectBluetooth()
+                console.log("连接失败，结束---")
+            }
+        })
+    },
+
+    /**
+     * 断开连接
+     */
+    closeConnectBluetooth() {
+        let _this = this;
+        // 断开BLE的连接
+        bluetooth.closeBLEConnection({
+                deviceId: _this.data.deviceId,
+                success(res) {
+                    console.log("手动断开连接")
+                }
+            })
+        // 断开蓝牙的连接 （初始化所有的状态）
+        bluetooth.closeAdapter({
+            success(res) {
+                console.log('断开蓝牙', res)
+                _this.deviceId = ''
+                _this.serviceId= ''
+                _this.characteristicId= ''
+                _this.name= ''
+            }
+        })
+    },
+
+    /**
+     * 获取设备服务
+     */
+    getBluetoothServers() {
+        let _this = this;
+        bluetooth.getBLEDeviceServices({
+            deviceId: _this.deviceId,
+            success(res) {
+                console.log('获取设备服务', res.services)
+                _this.serviceId = res.services[2].uuid
+                _this.getBluetoothCharacteristics()
+            },
+        })
+    },
+
+    /**
+     * 获取设备某个服务特征值列表
+     */
+    getBluetoothCharacteristics() {
+        let _this = this;
+        bluetooth.getBLEDeviceCharacteristics({
+            deviceId: _this.deviceId,
+            serviceId: _this.serviceId,
+            success(res) {
+                console.info('获取设备某个服务特征值列表', res)
+                _this.characteristicId= res.characteristics[0].uuid
+                _this.notifyBluetoothCharacteristicValueChange()
+            },
+        })
+    },
+
+    /**
+     * 启用设备特征值变化时的 notify 功能
+     */
+    notifyBluetoothCharacteristicValueChange() {
+        let _this = this;
+
+        bluetooth.notifyBLECharacteristicValueChange({
+            // 启用 notify 功能
+            state: true,
+            // 这里的 deviceId 需要已经通过 createBLEConnection 与对应设备建立链接
+            deviceId: _this.deviceId,
+            // 这里的 serviceId 需要在 getBLEDeviceServices 接口中获取
+            serviceId: _this.serviceId,
+            // 这里的 characteristicId 需要在 getBLEDeviceCharacteristics 接口中获取
+            characteristicId: _this.characteristicId,
+            success: function (res) {
+				// 执行操作成功，读取的值会在onblecharacteristicvaluechange 接口中上报
+                console.log("启用设备特征值变化时的 notify 功能", res)
+                _this.watchBluetoothCharacteristicValueChange()
+			},
+        })
+    },
+
+    /**
+     * 监听设备的特征值变化
+     */
+    watchBluetoothCharacteristicValueChange() {
+        let _this = this
+        console.log("监听设备的特征值变化")
+
+        //注册特征值改变监听
+		bluetooth.onblecharacteristicvaluechange = function (res) {
+            console.log('onBLECharacteristicValueChange', res)
+            console.log('返回数据', _this.ab2hex(res.value))
+            // 和硬件约定 7b010403a000dd 这个返回值是开门成功
+            if (_this.ab2hex(res.value) == '7b010403a000dd') {
+                prompt.showToast({
+                    message: '开门成功。'
+                })
+            } else {
+                prompt.showToast({
+                    message: '开门失败。'
+                })
+            }
+            _this.closeConnectBluetooth()
+        }
+
+        setTimeout(() => {
+            _this.writeBluetoothCharacteristicValue()
+        }, 20)
+    },
+
+    /**
+     * 向设备特征值中写入二进制数据
+     */
+    writeBluetoothCharacteristicValue(type) {
+        let _this = this
+
+        // 开门指令 
+        var arr = ['7A', '01', '04', '03', 'A0', '00', 'DE']
+        console.info('开门指令 转化 Buffer', _this.strToBuf(arr))
+
+        bluetooth.writeBLECharacteristicValue({
+            deviceId: _this.deviceId,
+            serviceId: _this.serviceId,
+            characteristicId: _this.characteristicId,
+            value: _this.strToBuf(arr),
+            success(res) {
+                console.log("写入成功")
+            },
+            fail(res) {
+                console.log("写入失败 结束")
+            }
+        })
+
+    }
+
+}
+</script>
+
+<style>
+@import '../../Common/css/common.css';
+
+.home-bg {
+    background-image: url('../../Common/img/home_bg.jpg');
+}
+.home-title {
+    color: #fdfdfd;
+    font-size: 34px;
+    margin-bottom: 50px;
+}
+.home-tip-wrap {
+    justify-content: flex-start;
+    padding-left: 40px;
+    margin-bottom:26px;
+}
+.home-tip-txt {
+    margin-left: 10px;
+    font-size: 28px;
+    color: #07487e;
+}
+.home-door-wrap {
+    justify-content: flex-start;
+    padding-left: 40px;
+}
+.home-door-txt {
+    margin-left: 10px;
+    font-size: 22px;
+    color: #07487e;
+}
+.home-door-optreate {
+    justify-content: space-around;
+    margin-top: 226px;
+    height: 400px;
+}
+
+.home-log {
+    flex-direction: column;
+    margin-top: 60px;
+    padding-left: 40px;
+}
+
+.home-img-css {
+    width: 250px;
+    height: 250px;
+    margin-top: 50px;
+    border-radius: 50%;
+    animation-name: pulse;
+    animation-duration: 5s;
+    animation-iteration-count: infinite;
+}
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 8px 16px #fff;
+    }
+    50% {
+        box-shadow: 0 0 8px 16px #ff6633;
+    }
+    100% {
+        box-shadow: 0 0 8px 16px #fff;
+    }
+}
+</style>
